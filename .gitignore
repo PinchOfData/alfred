@@ -1,0 +1,6 @@
+static
+memory/uploads
+memory/chroma
+memory/notes.json
+.env
+__pycache__/

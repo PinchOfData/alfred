@@ -1,0 +1,13 @@
+streamlit
+PyMuPDF
+chromadb
+sentence-transformers
+uuid
+ollama
+openai
+groq
+python-dotenv
+beautifulsoup4
+lxml
+wikipedia
+anthropic
