@@ -19,8 +19,19 @@ from utils import (
     extract_stream_token,
     detect_tool_use,
     transcribe_audio, 
-    synthesize_speech
+    synthesize_speech,
+    parse_date_range  
 )
+from web_search import wiki_lookup, search_semantic_scholar
+from google_utils import (
+    list_emails, 
+    send_email, 
+    mark_as_read, 
+    star_email, 
+    get_email_by_id,
+    create_event,
+    get_events_between_dates
+    )
 
 # ───────────── Setup ─────────────
 
@@ -29,9 +40,9 @@ import os
 load_dotenv()
 os.environ.get("GROQ_API_KEY")
 
-STATIC_UPLOAD_DIR = "static/uploads"
-PDF_URL_BASE = "/static/uploads"
-os.makedirs(STATIC_UPLOAD_DIR, exist_ok=True)
+UPLOAD_DIR = "memory/uploads"
+PDF_URL_BASE = "/memory/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 st.set_page_config(page_title="Alfred", layout="wide")
 MEM_DIR = "memory"
@@ -58,6 +69,8 @@ if "last_results" not in st.session_state:
     st.session_state.last_results = []
 if "pdf_action" not in st.session_state:
     st.session_state.pdf_action = {}
+if "draft_doc" not in st.session_state:
+    st.session_state.draft_doc = {"filename": None, "content": ""}
 
 # ───────────── Sidebar ─────────────
 with st.sidebar:
@@ -70,7 +83,13 @@ with st.sidebar:
             "groq:llama-3.3-70b-versatile",
             "ollama:gemma3",
             "openai:gpt-4o",
-            "anthropic:claude-3-sonnet-20240229"
+            "openai:gpt-4o-mini",
+            "openai:o4-mini",
+            "openai:o3",
+            "anthropic:claude-sonnet-4-0",
+            "anthropic:claude-opus-4-0",
+            "anthropic:claude-3-5-sonnet-latest"
+            "anthropic:claude-3-5-haiku-latest"
         ],
         index=0
     )
@@ -97,6 +116,8 @@ with st.sidebar:
         st.session_state.chat_history = []
         st.session_state.processed_text = ""
         st.session_state.latest_draft = ""
+        st.session_state.draft_email = None
+        st.session_state.draft_doc = {}
         st.session_state.last_lookup = {}
         st.session_state.last_results = []
         st.session_state.pdf_action = {}
@@ -115,7 +136,7 @@ with st.sidebar:
     page_numbers = st.text_input("Specify pages (e.g., 1-3,5):", "")
 
     if uploaded_file and st.button("Summarize and Store"):
-        upload_path = os.path.join(STATIC_UPLOAD_DIR, uploaded_file.name)
+        upload_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
         with open(upload_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
@@ -169,10 +190,19 @@ if audio_bytes and st.session_state.audio_already_processed:
 
 # Prefer transcribed audio (only if new)
 user_input = None
-if audio_bytes and st.session_state.stt_model != "None" and not st.session_state.audio_already_processed:
+if (
+    audio_bytes
+    and st.session_state.stt_model != "None"
+    and not st.session_state.audio_already_processed
+):
     with st.spinner("Transcribing audio…"):
         user_input = transcribe_audio(audio_bytes, st.session_state.stt_model)
     st.session_state.audio_already_processed = True
+    audio_bytes = None  # prevent local reuse
+
+    # ✅ Bump audio widget key so it resets
+    index = int(audio_input_key.split("_")[-1])
+    st.session_state.audio_input_key = f"audio_input_{index + 1}"
 
 # Typed input always takes priority
 if text_input:
@@ -192,9 +222,12 @@ if user_input:
 
     # 🧠 Tool detection (before checking for explicit command)
     if not user_input.startswith("/"):
-        detected_cmd = detect_tool_use(user_input, st.session_state.model_choice)
+        detected_cmd = detect_tool_use(
+            user_input,
+            st.session_state.model_choice,
+            st.session_state.chat_history  # ✅ pass full chat history
+        )
         if detected_cmd:
-            st.session_state.chat_history.append(("assistant", f"_Detected tool request → `{detected_cmd}`_"))
             user_input = detected_cmd  # Replace with inferred command
 
     if user_input.startswith("/"):
@@ -227,6 +260,141 @@ if user_input:
                 else:
                     store_text(content, docs_collection, {"source": "user"})
                     reply_and_save("✅ Stored to document collection.")
+
+        elif command == "rebuild":
+            import glob
+            from utils import summarize_and_store_pdf, load_pdf_by_filename, embed_full_text, save_notes
+            from datetime import datetime
+
+            # Step 1: Clear ChromaDB collections
+            for coll in [docs_collection, notes_collection]:
+                all_ids = coll.get().get("ids", [])
+                if all_ids:
+                    coll.delete(ids=all_ids)
+
+            reply_and_save("🧹 Cleared existing ChromaDB collections.")
+
+            # Step 2: Rebuild docs_collection from PDFs
+            pdf_dir = "memory/uploads"
+            pdf_files = glob.glob(os.path.join(pdf_dir, "*.pdf"))
+            for pdf_path in pdf_files:
+                try:
+                    with open(pdf_path, "rb") as f:
+                        from io import BytesIO
+                        fake_upload = BytesIO(f.read())
+                        fake_upload.name = os.path.basename(pdf_path)
+
+                        summary, msg = summarize_and_store_pdf(
+                            fake_upload,
+                            docs_collection,
+                            model=st.session_state.model_choice,
+                            pages=[1]  # default to first page
+                        )
+                        st.toast(f"✅ Indexed PDF: {fake_upload.name}")
+                except Exception as e:
+                    st.warning(f"❌ Failed to index {pdf_path}: {e}")
+
+            # Step 3: Rebuild docs_collection from text files
+            doc_dir = "memory/docs"
+            all_files = glob.glob(os.path.join(doc_dir, "*.*"))
+            for txt_path in all_files:
+                try:
+                    with open(txt_path, "r") as f:
+                        content = f.read()
+                    filename = os.path.basename(txt_path)
+                    store_text(content, docs_collection, {
+                        "tag": "doc",
+                        "filename": filename
+                    })
+                    st.toast(f"✅ Indexed text doc: {filename}")
+                except Exception as e:
+                    st.warning(f"❌ Failed to index {txt_path}: {e}")
+
+            # Step 4: Rebuild notes_collection from notes.json
+            notes_path = os.path.join("memory", "notes.json")
+            if os.path.exists(notes_path):
+                try:
+                    with open(notes_path, "r") as f:
+                        notes_data = json.load(f)
+
+                    for note in notes_data:
+                        add_note(note["content"], notes_collection)
+
+                    st.toast(f"✅ Restored {len(notes_data)} notes.")
+                except Exception as e:
+                    st.warning(f"⚠️ Could not load notes: {e}")
+
+            reply_and_save("🔁 Rebuild complete. ChromaDB is now reindexed.")
+
+        elif command == "calendar":
+            sub = args[0] if args else ""
+
+            if sub == "events":
+                if len(args) >= 3 and args[1].lower() == "events":
+                    date_range = " ".join(args[2:]).strip()
+                else:
+                    date_range = " ".join(args[1:]).strip()
+
+                try:
+                    start_date, end_date = parse_date_range(date_range)
+                    events = get_events_between_dates(start_date, end_date)
+
+                    if not events:
+                        reply_and_save(f"📭 No events found between {start_date} and {end_date}.")
+                    else:
+                        lines = [f"**{e['summary']}**\n🕐 {e['start']} — {e['end']}" for e in events]
+                        reply_and_save("📅 **Events Found:**\n\n" + "\n\n".join(lines))
+
+                except Exception as e:
+                    reply_and_save(f"❌ Could not parse date range or list events: {e}")
+
+            elif sub == "draft":
+
+                full_raw = user_input.split(" ", 2)[-1] if len(user_input.split(" ", 2)) == 3 else ""
+                parts  = [p.strip() for p in full_raw.split("|")]
+
+                if len(parts ) < 4:
+                    reply_and_save("⚠️ Usage: `/calendar draft <title> | <start> | <end> | <attendee1,attendee2> | <description>`")
+                else:
+                    try:
+                        event = {
+                            "summary": parts[0],
+                            "start": parts[1],
+                            "end": parts[2],
+                            "attendees": [a.strip() for a in parts[3].split(",") if a.strip()],
+                            "description": parts[4] if len(parts) > 4 else ""
+                        }
+                        st.session_state.draft_event = event
+                        reply_and_save(f"""📝 **Event Drafted**
+
+                        **Title**: {event['summary']}  
+                        **Start**: {event['start']}  
+                        **End**: {event['end']}  
+                        **Attendees**: {", ".join(event['attendees']) or "(None)"}  
+                        **Description**: {event['description'] or "(None)"}
+
+                        Use `/calendar create` to confirm.
+                        """)
+                    except Exception as e:
+                        reply_and_save(f"❌ Error drafting event: {e}")
+
+            elif sub == "create":
+                event = st.session_state.get("draft_event")
+                if not event:
+                    reply_and_save("⚠️ No event draft found. Use `/calendar draft` first.")
+                else:
+                    try:
+                        result = create_event(
+                            summary=event["summary"],
+                            start_time=event["start"],
+                            end_time=event["end"],
+                            description=event["description"],
+                            attendees_emails=event["attendees"]
+                        )
+                        st.session_state.draft_event = None
+                        reply_and_save(result)
+                    except Exception as e:
+                        reply_and_save(f"❌ Failed to create event: {e}")
 
         elif command == "lookup":
             if len(args) < 2:
@@ -313,7 +481,7 @@ if user_input:
                     reply_and_save(page_text or "❌ Failed to fetch page.")
                 else:
                     # Optional: truncate if very long
-                    max_chars = 10000
+                    max_chars = 80000
                     trimmed_page = page_text[:max_chars]
 
                     # Store in context (used in full prompt)
@@ -352,6 +520,241 @@ if user_input:
                         for p in papers
                     ])
                     reply_and_save(f"📚 Top Papers for: `{query}`\n\n{formatted}")
+
+        elif command == "doc":
+            sub = args[0] if args else ""
+            
+            if sub == "new" and len(args) >= 2:
+                st.session_state.draft_doc = {"filename": args[1], "content": ""}
+                reply_and_save(f"📝 New document started: `{args[1]}`")
+
+            elif sub == "write":
+                text = args[1] if len(args) >= 2 else ""
+                if not text:
+                    reply_and_save("⚠️ Provide text to write.")
+                else:
+                    st.session_state.draft_doc["content"] = text.strip()
+                    reply_and_save("✅ Text added to document.")
+
+            elif sub == "save":
+                filename = st.session_state.draft_doc["filename"]
+                content = st.session_state.draft_doc["content"]
+
+                if filename and content:
+                    save_path = os.path.join("memory", "docs", filename)
+                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                    with open(save_path, "w") as f:
+                        f.write(content)
+
+                    # Store summary or embedding in Chroma
+                    store_text(content, docs_collection, metadata={
+                        "tag": "doc",
+                        "filename": filename
+                    })
+
+                    reply_and_save(f"✅ Document `{filename}` saved.")
+                else:
+                    reply_and_save("⚠️ No document to save.")
+
+            elif sub == "list":
+                doc_dir = os.path.join("memory", "docs")
+                if os.path.exists(doc_dir):
+                    docs = [f for f in os.listdir(doc_dir) if os.path.isfile(os.path.join(doc_dir, f))]
+                    reply_and_save("📁 Saved Documents:\n" + "\n".join(f"- {d}" for d in docs))
+                else:
+                    reply_and_save("📂 No saved documents found.")
+
+            elif sub == "load" and len(args) >= 2:
+                fname = args[1]
+                doc_path = os.path.join("memory", "docs", fname)
+                if os.path.exists(doc_path):
+                    with open(doc_path, "r") as f:
+                        content = f.read()
+                    st.session_state.draft_doc = {"filename": fname, "content": content}
+                    reply_and_save(f"📂 Loaded `{fname}` into memory.")
+                else:
+                    reply_and_save(f"❌ File `{fname}` not found.")
+
+            else:
+                reply_and_save("⚠️ Usage: `/doc new|write|save|list|load`")
+
+        elif command == "gmail":
+            sub = args[0] if args else ""
+            
+            if sub == "inbox":
+                parts = command.split()
+                sub = parts[1] if len(parts) > 1 else "inbox"
+                count = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 5
+
+                emails = list_emails("in:inbox", max_results=count)
+                reply = "\n\n".join([f"⭐ *{e['subject']}*\nFrom: {e['from']}\n{e['snippet']}\nID: `{e['id']}`" for e in emails])
+                reply_and_save(reply or "📭 No inbox emails.")
+            
+            elif sub == "unread":
+                parts = command.split()
+                sub = parts[1] if len(parts) > 1 else "inbox"
+                count = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 5
+
+                emails = list_emails("is:unread", max_results=count)
+                reply = "\n\n".join([f"📧 *{e['subject']}*\nFrom: {e['from']}\n{e['snippet']}\nID: `{e['id']}`" for e in emails])
+                reply_and_save(reply or "📭 No unread emails.")
+
+            elif sub == "starred":
+                parts = command.split()
+                sub = parts[1] if len(parts) > 1 else "inbox"
+                count = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 5
+
+                emails = list_emails("is:starred", max_results=count)
+                reply = "\n\n".join([f"⭐ *{e['subject']}*\nFrom: {e['from']}\n{e['snippet']}\nID: `{e['id']}`" for e in emails])
+                reply_and_save(reply or "✨ No starred emails.")
+
+            elif sub == "view":
+                email_id = args[1] if len(args) > 1 else None
+
+                if email_id:
+                    email = get_email_by_id(email_id)
+                    if email:
+                        reply = (
+                            f"📧 **{email['subject']}**\n"
+                            f"**From:** {email['from']}\n"
+                            f"**To:** {email.get('to', 'N/A')}\n"
+                            f"**Date:** {email.get('date', 'N/A')}\n\n"
+                            f"---\n\n"
+                            f"{email['body']}\n\n"
+                            f"---\n\n"
+                            f"🆔 `{email['id']}`"
+                        )
+                    else:
+                        reply = f"❌ Email with ID `{email_id}` not found."
+                else:
+                    reply = "⚠️ Please provide a valid email ID to view."
+
+                reply_and_save(reply)
+
+            elif sub == "markread":
+                if len(args) < 2:
+                    reply_and_save("⚠️ Usage: `/gmail markread <msg_id>`")
+                else:
+                    mark_as_read(args[1])
+                    reply_and_save("✅ Email marked as read.")
+
+            elif sub == "star":
+                if len(args) < 2:
+                    reply_and_save("⚠️ Usage: `/gmail star <msg_id>`")
+                else:
+                    star_email(args[1])
+                    reply_and_save("⭐ Email starred.")
+
+            elif sub == "draft":
+                full_input = " ".join(args[1:])
+                parts = [p.strip() for p in full_input.split("|")]
+
+                to = None
+                cc = None
+                subject = None
+                body_parts = []
+
+                try:
+                    for part in parts:
+                        label, sep, value = part.partition(":")
+                        key = label.strip().lower()
+                        value = value.strip()
+
+                        if sep != ":" or not value:
+                            if not to:
+                                to = part.strip()
+                            else:
+                                body_parts.append(part.strip())
+                        elif key == "to":
+                            to = value
+                        elif key == "cc":
+                            cc = [email.strip() for email in value.split(",") if email.strip()]
+                        elif key == "subject":
+                            subject = value
+                        else:
+                            body_parts.append(part.strip())
+
+                    if not to or not subject or not body_parts:
+                        reply_and_save("⚠️ Usage: `/gmail draft <to> | cc:<cc1,cc2> | subject:<subject> | <body>` (CC optional)")
+                    else:
+                        st.session_state.draft_email = {
+                            "to": to,
+                            "cc": cc,
+                            "subject": subject.strip(),
+                            "body": "\n".join(body_parts).strip()
+                        }
+
+                        reply_and_save(f"""📄 **Draft Created**
+
+            **To**: {to}  
+            **CC**: {', '.join(cc) if cc else '(None)'}  
+            **Subject**: {subject.strip()}  
+            **Body**:  
+            {st.session_state.draft_email['body']}
+
+            Use `/gmail send` to send it when ready.
+            """)
+                except Exception as e:
+                    reply_and_save(f"❌ Error creating draft: {e}")
+
+            elif sub == "editdraft":
+                if "draft_email" not in st.session_state or not st.session_state.draft_email:
+                    reply_and_save("⚠️ No draft available to edit.")
+                else:
+                    full_input = " ".join(args[1:])
+                    parts = [p.strip() for p in full_input.split("|")]
+
+                    updated_fields = {}
+                    body_parts = []
+
+                    try:
+                        for part in parts:
+                            label, sep, value = part.partition(":")
+                            key = label.strip().lower()
+                            value = value.strip()
+
+                            if sep != ":" or not value:
+                                # If there's no colon or it's malformed, treat as body text
+                                body_parts.append(part.strip())
+                            elif key == "to":
+                                updated_fields["to"] = value
+                            elif key == "cc":
+                                updated_fields["cc"] = [email.strip() for email in value.split(",") if email.strip()]
+                            elif key == "subject":
+                                updated_fields["subject"] = value
+                            else:
+                                # Treat unrecognized labels as body content fallback
+                                body_parts.append(part.strip())
+
+                        if body_parts:
+                            updated_fields["body"] = "\n".join(body_parts).strip()
+
+                        for key, val in updated_fields.items():
+                            st.session_state.draft_email[key] = val
+
+                        reply_and_save("✅ Draft updated with fields: " + ", ".join(updated_fields.keys()))
+                    except Exception as e:
+                        reply_and_save(f"❌ Error editing draft: {e}")
+
+            elif sub == "send":
+                draft = st.session_state.get("draft_email")
+                if draft:
+                    try:
+                        send_email(
+                            to=draft["to"],
+                            subject=draft["subject"],
+                            body_text=draft["body"],
+                            cc=draft.get("cc")
+                        )
+                        reply_and_save(f"📤 Sent email to `{draft['to']}`.")
+                        st.session_state.draft_email = None
+                    except Exception as e:
+                        reply_and_save(f"❌ Failed to send email: {e}")
+                else:
+                    reply_and_save("⚠️ No draft found. Use `/gmail draft <to> | <subject> | <body>` first.")
+
+            else:
+                reply_and_save("⚠️ Usage: `/gmail inbox|unread|starred|send|markread|star`")
 
         elif command == "note":
             if not args:
@@ -466,29 +869,59 @@ if user_input:
 
     else:
         # ──────── Full Prompt Construction ────────
+        draft_doc = st.session_state.get("draft_doc", {})
+        draft_text = draft_doc.get("content", "").strip()
+        draft_filename = draft_doc.get("filename", "Untitled Draft")
+
+        processed_text = st.session_state.get("processed_text", "").strip()
+        notes_text = "\n".join(f"- {note}" for note in query_memory(user_input, notes_collection, top_k=5)) or "None"
         memory_prompt = "\n".join(f"{k}: {v}" for k, v in structured_memory.items())
-        top_notes = query_memory(user_input, notes_collection, top_k=5)
-        notes_text = "\n".join(f"- {note}" for note in top_notes) or "None"
-        pdf_text = st.session_state.processed_text.strip()
 
-        full_prompt = f"""
-        You are {persona['name']}, a {persona['role']}.
+        # Build email section
+        email = st.session_state.get("draft_email")
+        email_text = ""
+        if email:
+            email_text = f"""To: {email.get("to", "N/A")}
+        CC: {", ".join(email.get("cc", [])) if email.get("cc") else "None"}
+        Subject: {email.get("subject", "N/A")}
 
-        Your tone is: {persona['tone']}
-        Your communication style: {persona['style']}
+        {email.get("body", "").strip()}"""
 
-        User details:
-        {memory_prompt}
+        # Build structured prompt
+        sections = [
+            f"You are {persona['name']}, a {persona['role']}.",
+            f"Tone: {persona['tone']}",
+            f"Style: {persona['style']}",
+            "",
+            "### 🧠 User Details",
+            memory_prompt,
+            "",
+            "### 📓 Notes",
+            notes_text
+        ]
 
-        Notes:
-        {notes_text}
+        if processed_text:
+            sections.extend([
+                "",
+                "### 📄 Uploaded Document",
+                processed_text
+            ])
 
-        Recent Document Content:
-        {pdf_text or 'No document provided.'}
+        if draft_text:
+            sections.extend([
+                "",
+                f"### ✍️ Draft Document: {draft_filename}",
+                draft_text
+            ])
 
-        Now answer this in your own voice: {user_input}
-        """
+        if email_text.strip():
+            sections.extend([
+                "",
+                "### 📧 Draft Email",
+                email_text
+            ])
 
+        full_prompt = "\n".join(sections)
 
         # Show prompt in expandable block
         with st.expander("🔍 Full Prompt", expanded=False):
@@ -502,6 +935,7 @@ if user_input:
             for role, msg in st.session_state.chat_history:
                 if role in {"user", "assistant"}:
                     chat_messages.append({"role": role, "content": msg})
+            chat_messages.append({"role": "user", "content": user_input})
 
             stream = chat_with_model(
                 st.session_state.model_choice,
@@ -532,7 +966,7 @@ if user_input:
         You are a helpful assistant aiming to personalize the user experience by saving useful insights for future reference.
 
         Instructions:
-        - Focus on **user experience**, not technical details.
+        - Focus on **user experience** and **information about the user's life**, not technical details.
         - Return a standalone note or "NO_NOTE" — nothing else.
         """
 
@@ -544,9 +978,6 @@ if user_input:
         User: {user_input}
         Assistant: {answer}
         """
-
-#        with st.expander("🧾 Note Reflection Prompt", expanded=False):
-#            st.code(note_check_prompt.strip(), language="markdown")
 
         note_response = chat_with_model(
             st.session_state.model_choice,
@@ -564,6 +995,63 @@ if user_input:
             add_note(note_text, notes_collection)
             st.toast("📝 Alfred saved a note automatically.")
 
+# ───────────── Document Editor ─────────────
+if st.session_state.get("draft_doc", {}).get("filename"):
+    st.subheader("📄 Document Editor")
+
+    st.text_input(
+        "✏️ Filename",
+        value=st.session_state.draft_doc["filename"],
+        key="doc_edit_filename",
+        disabled=True
+    )
+
+    st.session_state.draft_doc["content"] = st.text_area(
+        "📝 Content",
+        value=st.session_state.draft_doc["content"],
+        height=300,
+        key="doc_edit_content"
+    )
+
+    st.markdown("💾 Use `/doc save` to store your changes.")
+
+# ───────────── Draft Event Editor ─────────────
+if st.session_state.get("draft_event"):
+    ev = st.session_state.draft_event
+    st.subheader("📅 Review & Edit Draft Event")
+
+    st.session_state.draft_event["summary"] = st.text_input("📝 Title", value=ev["summary"])
+    st.session_state.draft_event["start"] = st.text_input("🕐 Start Time", value=ev["start"])
+    st.session_state.draft_event["end"] = st.text_input("🕒 End Time", value=ev["end"])
+    st.session_state.draft_event["attendees"] = st.text_input("👥 Attendees (comma-separated)", value=", ".join(ev["attendees"])).split(",")
+    st.session_state.draft_event["description"] = st.text_area("🗒️ Description", value=ev["description"], height=100)
+
+    st.markdown("📤 Use `/calendar create` to confirm and send the invite.")
+
+# ───────────── Draft Email Editor ─────────────
+if st.session_state.get("draft_email"):
+    draft = st.session_state.draft_email
+    st.subheader("📧 Review & Edit Draft Email")
+
+    st.markdown(f"**To:** `{draft.get('to')}`")
+
+    st.session_state.draft_email["to"] = st.text_input(
+        "📬 To", value=draft.get("to", ""), key="edit_to"
+    )
+
+    st.session_state.draft_email["cc"] = st.text_input(
+        "📋 CC (comma-separated)", value=", ".join(draft.get("cc", [])), key="edit_cc"
+    ).split(",") if st.session_state.draft_email["cc"] else []
+
+    st.session_state.draft_email["subject"] = st.text_input(
+        "✏️ Subject", value=draft.get("subject", ""), key="edit_subject"
+    )
+    st.session_state.draft_email["body"] = st.text_area(
+        "📝 Body", value=draft.get("body", ""), height=200, key="edit_body"
+    )
+
+    st.markdown("➡️ When you're ready, type `/gmail send` to send the email.")
+
 # ───────────── Display Lookup Results in Tabs ─────────────
 if user_input and not user_input.startswith("/lookup "):
     st.session_state.last_lookup = {}
@@ -580,19 +1068,19 @@ if st.session_state.last_results:
     for i, tab in enumerate(tabs):
         summary, meta = st.session_state.last_results[i]
         with tab:
-            st.markdown(summary[:400] + "...")
+            st.markdown(summary)
 
-            if "filename" in meta:
-                if st.button("📥 Load into context", key=f"load_{i}"):
-                    st.session_state.pdf_action = {"type": "load", "file": meta["filename"]}
+            is_pdf = "filename" in meta and meta["filename"].lower().endswith(".pdf")
+
+            # Load into context for all results
+            if st.button("📥 Load into context", key=f"load_{i}"):
+                st.session_state.processed_text = summary[:80000]
+                st.toast("✅ Loaded result into memory.")
+
+            # Preview only for PDFs
+            if is_pdf:
                 if st.button("👁️ Preview", key=f"preview_{i}"):
                     st.session_state.pdf_action = {"type": "preview", "file": meta["filename"]}
-            else:
-                if st.button("📥 Load into context", key=f"textload_{i}"):
-                    st.session_state.processed_text = summary[:10000]
-                    st.toast("✅ Loaded result into memory.")
-                with st.expander("👁️ View Full Text"):
-                    st.markdown(summary)
 
 # ───────────── Handle PDF Action (Load / Preview) ─────────────
 action = st.session_state.pdf_action
@@ -601,14 +1089,14 @@ if action:
     if action["type"] == "load":
         text = load_pdf_by_filename(fname)
         if text:
-            trimmed_text = text[:10000]
+            trimmed_text = text[:80000]
 
             st.session_state.processed_text = trimmed_text
-            st.toast(f"✅ Loaded the first 10,000 characters from `{fname}`.")
+            st.toast(f"✅ Loaded the first 80,000 characters from `{fname}`.")
         else:
             st.warning("⚠️ Could not load text from PDF.")
     elif action["type"] == "preview":
-        file_path = os.path.join(STATIC_UPLOAD_DIR, fname)
+        file_path = os.path.join(UPLOAD_DIR, fname)
         if os.path.exists(file_path):
             with open(file_path, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode("utf-8")

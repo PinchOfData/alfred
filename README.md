@@ -1,30 +1,102 @@
-# 🧠 Alfred – Your Personalized Assistant
+# 🧠 Alfred – Your Personalized AI Assistant
 
-Alfred is a memory-augmented AI assistant that helps you summarize documents, query past conversations, take notes, access the web, and more — all while maintaining structured memory and a personalized tone.
+Alfred is an AI assistant designed to help you manage documents, take notes, reply to emails, schedule events, and search the web. It maintains structured memory, supports voice interactions, and responds in a personalized tone that adapts to you over time.
 
 ---
 
-## 🚀 Features
+## 🚀 Features Overview
 
-- 📄 **PDF & TXT Summarization**  
-  Upload documents, extract summaries, and search for them at a later point in time.
+### 📄 Document Management
+- Upload **PDF** or **TXT** files
+- Create and manage plain-text documents
+- Summarize and embed content with LLMs for easy retrieval 
 
-- 💬 **Conversational Memory**  
-  Chat with Alfred — he remembers past messages and stores useful exchanges for a personalized experience.
+### 💬 Conversational Memory
+- Natural chat interface with full session history
+- Auto-saves key exchanges with `/store` command
+- Personalized tone and structured context via `persona.json` and `structured.json`
 
-- 🧠 **Note Management**  
-  Add, edit, delete, and clean personal notes with LLM-assisted reflection.
+### 🧠 Note Taking & Cleanup
+- Add, list, edit, and delete personal notes
+- Auto-save insights detected in conversations
+- Clean and de-duplicate notes using LLM reflection
 
-- 🌐 **Web & Research Access**  
-  Use commands to access real-time knowledge:
-  - `/search <query>` — Google CSE search
-  - `/visit <url>` — Visit and summarize any web page
-  - `/wiki <topic>` — Get summaries from Wikipedia
-  - `/papers <query>` — Academic paper search via Semantic Scholar
-  - `/news <topic>` — Top news from Google News RSS
+### 🌍 Web & Research Integration
+- Google search, Wikipedia, papers, and news summarization
+- Visit and summarize any web page
 
-- 🧹 **Memory Tools**  
-  Clear session memory or manage long-term ChromaDB memory via `/store`, `/lookup`, and `notes`.
+### 📧 Gmail and Google Calendar Integration
+- View, flag, draft, and send Gmail messages
+- Check out your schedule and create new events
+- Built-in editor for composing and reviewing emails/events
+
+### 🔁 Memory & Maintenance
+- Easily clear or rebuild memory state
+- Tag and retrieve docs/notes on your computer
+
+### 🎙️ Audio I/O Support
+- Voice input and text-to-speech responses (optional)
+
+---
+
+## 💻 Command Reference
+
+> Alfred has access to the following commands and will use them if he deems it necessary or you instruct him to do so. You can also use them directly in the chat.
+
+### 🔐 Memory Commands
+| Command                     | Action                                          |
+|----------------------------|-------------------------------------------------|
+| `/store <tag>`             | Save last exchange to memory                    |
+| `/lookup <tag> <query>`    | Search memory by tag and query                  |
+
+### 📝 Note Management
+| Command                     | Action                                          |
+|----------------------------|-------------------------------------------------|
+| `/note add <note>`         | Add a new note                                  |
+| `/note list`               | List all notes                                  |
+| `/note edit <id>`          | Edit a specific note                            |
+| `/note del <id>`           | Delete a note                                   |
+
+### 🌐 Web & Research
+| Command                     | Action                                          |
+|----------------------------|-------------------------------------------------|
+| `/search <query>`          | Perform a Google Custom Search                  |
+| `/visit <url>`             | Visit and summarize a webpage                   |
+| `/wiki <topic>`            | Fetch a Wikipedia summary                       |
+| `/papers <query>`          | Get academic paper summaries                    |
+| `/news <query>`            | Fetch top news headlines                        |
+
+### 📬 Gmail Commands
+| Command                     | Action                                          |
+|----------------------------|-------------------------------------------------|
+| `/gmail inbox`             | List recent inbox emails                        |
+| `/gmail unread`            | Show unread emails                              |
+| `/gmail starred`           | Show starred emails                             |
+| `/gmail view <msg_id>`     | View full email content                         |
+| `/gmail markread <msg_id>` | Mark email as read                              |
+| `/gmail star <msg_id>`     | Star an email                                   |
+| `/gmail draft`             | Start drafting an email                         |
+| `/gmail send`              | Send the current draft                          |
+
+### 📅 Google Calendar Commands
+
+| Command                                                                 | Action                                                                 |
+|-------------------------------------------------------------------------|------------------------------------------------------------------------|
+| `/calendar events <YYYY-MM-DD> to <YYYY-MM-DD>`                        | List calendar events in a given date range                             |
+| `/calendar draft <title> \| <start> \| <end> \| <attendee1,attendee2> \| <description>` | Draft an event (start/end must be in local time format)               |
+| `/calendar create`                                                     | Create and send the currently drafted event                            |
+
+> ℹ️ **Time format tip**: Use `YYYY-MM-DDTHH:MM:SS` in **Paris local time** (do not include a `Z` at the end).  
+> Example: `2025-07-22T14:00:00` means 2 PM Paris time.
+
+### 📄 Document Commands
+| Command                     | Action                                          |
+|----------------------------|-------------------------------------------------|
+| `/doc new <name>`          | Create a new document                           |
+| `/doc write <text>`        | Write or append to document                     |
+| `/doc save`                | Save the current document                       |
+| `/doc list`                | List all saved documents                        |
+| `/doc load <name>`         | Load a document for editing                     |
 
 ---
 
@@ -57,27 +129,6 @@ Alfred is a memory-augmented AI assistant that helps you summarize documents, qu
    ```bash
     streamlit run app.py
     ```
-
-## 🛠️ Command Reference
-
-| Command                   | Description                                     |
-| ------------------------- | ----------------------------------------------- |
-| `/store <tag>`            | Save the last user/assistant exchange to memory |
-| `/lookup <tag> <query>`   | Search memory by tag                            |
-| `/note add/edit/del/list` | Manage personal notes                           |
-| `/search <query>`         | Google search (via Custom Search API)           |
-| `/visit <url>`            | Visit and summarize any web page                |
-| `/wiki <topic>`           | Fetch Wikipedia summary                         |
-| `/papers <topic>`         | Get academic articles via Semantic Scholar      |
-| `/news <query>`           | Get top headlines on a topic                    |
-
-## 🧠 Memory and Persistence
-
-- All notes and document memories are stored in memory/ via ChromaDB.
-
-- User memory is structured using persona.json and structured.json.
-
-- Notes can be cleaned using AI to remove duplicates or clarify entries.
 
 ## 📬 Feedback
 

@@ -2,5 +2,7 @@ static
 memory/uploads
 memory/chroma
 memory/notes.json
+memory/token.json
+memory/google_credentials.json
 .env
 __pycache__/

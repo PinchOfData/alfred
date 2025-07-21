@@ -55,21 +55,29 @@ def google_search(query, num_results=5):
 # ─────────────────────────────────────
 # /visit (Fetch + Clean Page Text)
 # ─────────────────────────────────────
+from playwright.sync_api import sync_playwright
+
 def fetch_and_clean_url(url):
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
-        res = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(url, timeout=15000)
+            page.wait_for_load_state("networkidle")  # ensure page is fully loaded
 
+            content = page.content()
+            browser.close()
+
+        soup = BeautifulSoup(content, "html.parser")
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
 
         text = " ".join(chunk.strip() for chunk in soup.stripped_strings)
-        return text[:15000]  # LLM-friendly size
+        return text[:15000]
+
     except Exception as e:
-        return f"⚠️ Failed to fetch: {e}"
+        return f"⚠️ Failed to fetch JS-rendered page: {e}"
+
 
 # ─────────────────────────────────────
 # /wiki (Wikipedia Summary)

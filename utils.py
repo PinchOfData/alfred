@@ -10,6 +10,26 @@ from openai import OpenAI
 from dotenv import load_dotenv
 load_dotenv()
 
+# ───────────────── Dates ──────────────────
+from datetime import datetime, timedelta
+
+def parse_date_range(text: str):
+    text = text.strip().lower()
+
+    if text == "today":
+        start = datetime.utcnow().date()
+        end = start
+    elif text == "tomorrow":
+        start = datetime.utcnow().date() + timedelta(days=1)
+        end = start
+    elif "to" in text:
+        parts = text.split("to")
+        start = datetime.strptime(parts[0].strip(), "%Y-%m-%d").date()
+        end = datetime.strptime(parts[1].strip(), "%Y-%m-%d").date()
+    else:
+        start = end = datetime.strptime(text.strip(), "%Y-%m-%d").date()
+
+    return start.isoformat(), end.isoformat()
 
 # ───────────────── Embeddings ──────────────────
 model = SentenceTransformer("all-MiniLM-L6-v2")   # fast & light
@@ -39,14 +59,33 @@ def extract_text(uploaded_file, pages: list[int] | None = None) -> str:
         text = ""
     return text
 
+import hashlib
+
 def store_text(text: str, collection, metadata: dict | None = None):
-    """Store one text object (no chunking) in Chroma."""
+    """Store one text object (no chunking) in Chroma with deterministic ID."""
+    
+    # Use hash of content + filename as unique ID
+    content_hash = hashlib.md5(text.encode()).hexdigest()
+    tag = metadata.get("tag", "") if metadata else ""
+    fname = metadata.get("filename", "") if metadata else ""
+    uid = f"{tag}_{fname}_{content_hash}"
+
+    # Optional: remove previous entry with same filename
+    if fname:
+        existing = collection.get()
+        ids_to_delete = [
+            doc_id for doc_id, meta in zip(existing["ids"], existing.get("metadatas", []))
+            if meta.get("filename") == fname
+        ]
+        if ids_to_delete:
+            collection.delete(ids=ids_to_delete)
+
     record = dict(
         documents=[text],
         embeddings=[embed_full_text(text)],
-        ids=[str(uuid.uuid4())],
+        ids=[uid],
     )
-    if metadata:                       # ← only send if non-empty
+    if metadata:
         record["metadatas"] = [metadata]
 
     collection.add(**record)
@@ -293,50 +332,80 @@ def extract_stream_token(chunk, provider: str) -> str:
 
 # ───────────────── Tool detection ──────────────
 
-def detect_tool_use(user_input: str, model_name: str) -> str | None:
-    """
-    Use LLM to detect if the user's input is a tool invocation.
-    If so, return the corresponding command string (e.g., "/wiki Einstein").
-    Otherwise, return None.
-    """
-    import json
-
+def detect_tool_use(user_input: str, model_name: str, chat_history: list[tuple[str, str]]) -> str | None:
     tools = {
         "/lookup <tag> <query>": "Search internal memory (NB: tags are lowercase and optional)",
         "/wiki <topic>": "Summarize a Wikipedia article",
         "/papers <topic>": "Search academic literature",
         "/news <topic?>": "Summarize current news (NB: topic is optional)",
         "/search <query>": "Perform a web search",
-        "/visit <url>": "Navigate to a webpage URL"
+        "/visit <url>": "Navigate to a webpage URL",
+        "/note add <text>": "Create a new note with the given text",
+        "/gmail inbox N": "Show N most recent emails in your inbox",
+        "/gmail unread N": "Show N most recent unread emails",
+        "/gmail starred N": "Show N most recent starred emails",
+        "/gmail view <msg_id>": "View a specific email in full detail",
+        "/gmail draft <to> | cc:<cc1,cc2> | <subject> | <body>": "Draft an email (CC is optional)",
+        "/gmail editdraft to:<to> | cc:<cc1,cc2> | subject:<subject> | <body>": "Edit the draft email (only include parts you want to change)",
+        "/gmail send": "Send the current draft email",
+        "/gmail markread <msg_id>": "Mark an email as read",
+        "/gmail star <msg_id>": "Star an email",
+        "/doc new <filename>": "Start a new document with the given filename",
+        "/doc write <text>": "Overwrite the current document",
+        "/doc save": "Save the current document to storage",
+        "/doc list": "List all saved documents",
+        "/doc load <filename>": "Load a saved document into memory",
+        "/calendar events <YYYY-MM-DD> to <YYYY-MM-DD>": "List events within a date range",
+        "/calendar draft <title> | <start> | <end> | <attendees> | <description>": "Create a draft calendar event",
+        "/calendar create": "Create and send the currently drafted calendar event"
     }
 
     tool_list = "\n".join([f"- `{cmd}` — {desc}" for cmd, desc in tools.items()])
 
-    prompt = f"""
-    You have access to many tools:
+    system_prompt = f"""
+    You are an assistant that detects if a user is trying to invoke a tool.
+
+    Here are the tools available:
     {tool_list}
 
-    Your job:
-    1. Determine if the user intends to **invoke a tool**.
-    2. If yes, respond with a well-formed command.
-    3. If the user is just chatting (not asking Alfred to take action), respond only with:
-    NO_COMMAND
+    Rules:
+    - If a tool is clearly invoked or implied, respond with the correct command string (e.g. `/wiki Einstein`)
+    - If not, respond with: NO_COMMAND
+    - Never explain, just return the string.
 
     Examples:
-    - "Tell me who Karl Popper was" → `/wiki Karl Popper`
-    - "Look up papers about diffusion models" → `/papers diffusion models`
-    - "Summarize this URL: https://foo.com" → `/visit https://foo.com`
-    - "What are my upcoming tasks?" → NO_COMMAND
-
-    The user said:
-    \"\"\"{user_input}\"\"\"    
-
-    Now respond:
+    - "Check Karl Popper on Wikipedia" → /wiki Karl Popper
+    - "Look up papers about diffusion models" → /papers diffusion models
+    - "Summarize this URL: https://foo.com" → /visit https://foo.com
+    - "Check my inbox" → /gmail inbox
+    - "Check my 10 latest emails" → /gmail inbox 10
+    - "Mark this message as read: 1782a7e" → /gmail markread 1782a7e
+    - "Send a message to Jane saying hello" → /gmail draft jane@example.com | subject:Hello | Hello Jane!
+    - "Email Bob with Carol and Dan cc’d about the Q3 review" → /gmail draft bob@example.com | cc:carol@example.com,dan@example.com | Q3 Review | Here are the updates...
+    - "Edit the draft to cc my manager and update the subject" → /gmail editdraft cc:manager@example.com | subject:Updated Proposal
+    - "Change the email to say I'm unavailable all week" → /gmail editdraft subject:Out of Office | Hi, I’ll be unavailable all week.
+    - "Show me the email with ID 12345" → /gmail view 12345
+    - "Start a new doc called meeting_notes.txt" → /doc new meeting_notes.txt
+    - "Add this line: Project due by Friday" → /doc write Deadlines: Project due by Friday
+    - "Save the current document" → /doc save
+    - "Show all saved documents" → /doc list
+    - "Open the file notes_2023.txt" → /doc load notes_2023.txt
+    - "List all meetings between July 22 2025 and July 24 2025" → /calendar events 2025-07-22 to 2025-07-24
+    - "Schedule a meeting with Alice and Bob tomorrow at 3pm" → /calendar draft Meeting with Alice and Bob | 2025-07-22T15:00:00 | 2025-07-22T15:30:00 | alice@example.com,bob@example.com | Discussion
+    - "Draft an event on 22/07/2025 from 10 to 12 called VAE" → /calendar draft VAE | 2025-07-22T10:00:00 | 2025-07-22T12:00:00 |  | 
+    - "Send the calendar invite now" → /calendar create
     """
+
+    # Build history-based message list
+    messages = [{"role": "system", "content": system_prompt}]
+    for role, content in chat_history[-12:]:  # ⏪ Include recent history (adjust depth as needed)
+        if role in {"user", "assistant"}:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user_input})
 
     response = chat_with_model(
         model_name,
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         stream=False
     )
 
