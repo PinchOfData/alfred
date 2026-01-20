@@ -21,8 +21,9 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly"
 ]
 
-CREDENTIALS_PATH = os.path.join("memory", "google_credentials.json")
-TOKEN_PATH = os.path.join("memory", "token.json")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CREDENTIALS_PATH = os.path.join(_SCRIPT_DIR, "memory", "google_credentials.json")
+TOKEN_PATH = os.path.join(_SCRIPT_DIR, "memory", "token.json")
 
 def get_google_service(api_name, version):
     creds = None

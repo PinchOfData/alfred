@@ -1,8 +1,31 @@
-static
-memory/uploads
-memory/chroma
-memory/notes.json
-memory/token.json
-memory/google_credentials.json
-.env
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+
+# Environment and credentials
+.env
+.env.local
+
+# Personal content folders
+memory/
+overleaf/
+teaching/
+news/
+projects/
+docs/
+
+# Local config (contains paths)
+.mcp.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
