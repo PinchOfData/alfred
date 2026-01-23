@@ -113,6 +113,18 @@ Once configured, you can ask Claude Code things like:
 - "Send an email to alice@example.com about the meeting"
 - "Pull my thesis project and fix the typo in section 3"
 
+## Cron Automation (Optional)
+
+You can set up automated briefings:
+
+```bash
+# Morning briefing at 8am
+0 8 * * * cd ~/alfred && claude -p "Good morning! Give me my briefing."
+
+# End of day check at 6pm
+0 18 * * * cd ~/alfred && claude -p "Any unread emails I should handle before EOD?"
+```
+
 ## License
 
 MIT
