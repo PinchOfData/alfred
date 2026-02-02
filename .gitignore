@@ -18,9 +18,12 @@ teaching/
 news/
 projects/
 docs/
+referee_reports/
+results/
 
 # Local config (contains paths)
 .mcp.json
+.claude/
 
 # IDE
 .vscode/

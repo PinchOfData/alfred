@@ -49,6 +49,24 @@ ssh bocconi-hpc "sbatch script.sh"         # Submit job
 ssh bocconi-hpc "module avail"             # List modules
 ```
 
+## Login Node Rules
+
+**IMPORTANT:** The login node is shared. Never run resource-intensive commands directly.
+
+**Allowed on login node:**
+- File operations: `ls`, `cat`, `head`, `tail`, `cp`, `mv`, `scp`
+- Job management: `squeue`, `sbatch`, `scancel`, `sinfo`
+- Light editing: `vim`, `nano`
+- Module commands: `module avail`, `module load`
+
+**Always use SLURM jobs for:**
+- Python scripts (even simple imports like torch are heavy)
+- Any data processing or analysis
+- Compilation of large projects
+- Anything that loads significant data into memory
+
+Use `debug_cpu` or `debug_gpu` partitions (15 min limit) for quick interactive tests.
+
 ## Workflows
 
 ### Job Management
