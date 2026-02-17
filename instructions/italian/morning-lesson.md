@@ -1,7 +1,7 @@
 # Italian Morning Lessons
 
 ## Student Level
-**Beginner** - Starting from scratch
+**Intermediate** - Has basic conversational Italian, understands common structures, but needs refinement in grammar, vocabulary expansion, and natural expression.
 
 ## Progress Tracking
 Before each lesson, read `instructions/italian/progress.md` to:
@@ -23,42 +23,49 @@ When delivering the Italian morning lesson:
 ### 1. Greeting (in Italian with translation)
 Start with a simple Italian greeting appropriate to the time of day.
 
-### 2. Word of the Day
-- One new vocabulary word
-- Pronunciation guide (phonetic)
-- Example sentence with translation
-- Related words if applicable
+### 2. Vocabulary Expansion
+- One nuanced word or expression beyond basics
+- Register notes (formal/informal/regional)
+- Common collocations and usage patterns
+- Synonyms and subtle differences
 
-### 3. Phrase of the Day
-- One useful everyday phrase
-- Breakdown of each word
-- When/how to use it
+### 3. Idiomatic Expression
+- One Italian idiom or modo di dire
+- Literal vs. actual meaning
+- Usage context and examples
+- Connection to Italian culture when relevant
 
-### 4. Grammar Bite
-- One small grammar concept
-- Keep it digestible (articles, verb conjugation patterns, etc.)
-- Build progressively on previous lessons
+### 4. Grammar Refinement
+Focus on intermediate/advanced structures:
+- Conditional mood (condizionale presente e passato)
+- Subjunctive mood (congiuntivo) and its triggers
+- Compound tenses and agreement
+- Pronoun combinations (glielo, ce lo, etc.)
+- Tricky prepositions (da vs. di, per vs. a)
+- Gerundio vs. infinitive constructions
 
-### 5. Quick Practice
-- 2-3 simple exercises:
-  - Fill in the blank
-  - Translate a short sentence
-  - Match words to meanings
+### 5. Practice Exercise
+- Translation challenge (English → Italian with nuance)
+- Error correction (spot the mistake)
+- Sentence transformation (change tense/mood)
 
-### 6. Cultural Note (optional)
-- Brief insight into Italian culture, customs, or regional differences
+### 6. Cultural/Linguistic Note
+- Regional differences in vocabulary or pronunciation
+- False friends with French or English
+- Formal vs. informal register choices
 
 ## Progression Plan
 
-**Weeks 1-2**: Greetings, introductions, numbers 1-20, basic articles (il, la, un, una)
-**Weeks 3-4**: Common verbs (essere, avere, fare), present tense basics
-**Weeks 5-6**: Food & restaurant vocabulary, ordering phrases
-**Weeks 7-8**: Directions, transportation, time expressions
-**Weeks 9-10**: Family, descriptions, adjective agreement
-**Weeks 11-12**: Past tense introduction, travel phrases
+**Weeks 1-2**: Conditional mood (condizionale), polite requests, hypotheticals
+**Weeks 3-4**: Subjunctive mood (congiuntivo) introduction, expressing doubt/desire
+**Weeks 5-6**: Advanced past tenses (trapassato, passato remoto for reading)
+**Weeks 7-8**: Idiomatic expressions, false friends with French/English
+**Weeks 9-10**: Formal vs. informal register, professional vocabulary
+**Weeks 11-12**: Regional variations, colloquialisms, cultural nuances
 
 ## Teaching Style
-- Patient and encouraging
-- Use repetition strategically
-- Connect new words to English cognates when possible
-- Celebrate small victories
+- Challenge without overwhelming
+- Point out common mistakes intermediate learners make
+- Leverage French/English knowledge where helpful (but watch for false friends!)
+- Focus on sounding natural, not textbook
+- Introduce colloquial Italian alongside standard forms

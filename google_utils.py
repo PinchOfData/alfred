@@ -84,13 +84,15 @@ def star_email(msg_id):
     service = get_google_service('gmail', 'v1')
     service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ['STARRED']}).execute()
 
-def send_email(to, subject, body_text, cc=None):
+def send_email(to, subject, body_text, cc=None, bcc=None):
     service = get_google_service('gmail', 'v1')
     message = MIMEText(body_text.replace("\\n", "\n"), "plain")
 
     message['To'] = to if isinstance(to, str) else ", ".join(to)
     if cc:
         message['Cc'] = cc if isinstance(cc, str) else ", ".join(cc)
+    if bcc:
+        message['Bcc'] = bcc if isinstance(bcc, str) else ", ".join(bcc)
     message['From'] = "me"
     message['Subject'] = subject
 
@@ -156,7 +158,7 @@ def get_events_between_dates(start_date: str, end_date: str):
         summary = event.get('summary', '(No Title)')
         start = event.get('start', {}).get('dateTime', event.get('start', {}).get('date', ''))
         end = event.get('end', {}).get('dateTime', event.get('end', {}).get('date', ''))
-        formatted.append({"summary": summary, "start": start, "end": end})
+        formatted.append({"id": event['id'], "summary": summary, "start": start, "end": end})
 
     return formatted
 
@@ -175,3 +177,28 @@ def create_event(summary, start_time, end_time, description="", attendees_emails
 
     event = service.events().insert(calendarId='primary', body=event, sendUpdates="all").execute()
     return f"✅ Event created: [{event.get('summary')}]({event.get('htmlLink')})"
+
+
+def update_event(event_id, summary=None, start_time=None, end_time=None, description=None):
+    """Update an existing calendar event."""
+    service = get_google_service('calendar', 'v3')
+    event = service.events().get(calendarId='primary', eventId=event_id).execute()
+
+    if summary:
+        event['summary'] = summary
+    if start_time:
+        event['start'] = {'dateTime': start_time, 'timeZone': 'Europe/Paris'}
+    if end_time:
+        event['end'] = {'dateTime': end_time, 'timeZone': 'Europe/Paris'}
+    if description is not None:
+        event['description'] = description
+
+    updated = service.events().update(calendarId='primary', eventId=event_id, body=event, sendUpdates="all").execute()
+    return f"✅ Event updated: {updated.get('summary')}"
+
+
+def delete_event(event_id):
+    """Delete a calendar event."""
+    service = get_google_service('calendar', 'v3')
+    service.events().delete(calendarId='primary', eventId=event_id, sendUpdates="all").execute()
+    return "✅ Event deleted"

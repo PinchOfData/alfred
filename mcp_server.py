@@ -105,7 +105,7 @@ def gmail_star_email(email_id: str) -> str:
 
 
 @mcp.tool()
-def gmail_send_email(to: str, subject: str, body: str, cc: Optional[str] = None) -> str:
+def gmail_send_email(to: str, subject: str, body: str, cc: Optional[str] = None, bcc: Optional[str] = None) -> str:
     """
     Send an email.
 
@@ -114,12 +114,13 @@ def gmail_send_email(to: str, subject: str, body: str, cc: Optional[str] = None)
         subject: Email subject
         body: Email body text
         cc: Optional CC recipients (comma-separated)
+        bcc: Optional BCC recipients (comma-separated)
 
     Returns:
         Confirmation message
     """
     try:
-        google_utils.send_email(to=to, subject=subject, body_text=body, cc=cc)
+        google_utils.send_email(to=to, subject=subject, body_text=body, cc=cc, bcc=bcc)
         return f"Email sent to {to} with subject: {subject}"
     except Exception as e:
         return f"Error sending email: {str(e)}"
@@ -147,6 +148,7 @@ def calendar_get_events(start_date: str, end_date: str) -> str:
         result = []
         for event in events:
             result.append(
+                f"ID: {event['id']}\n"
                 f"Event: {event['summary']}\n"
                 f"Start: {event['start']}\n"
                 f"End: {event['end']}"
@@ -189,6 +191,56 @@ def calendar_create_event(
         return result
     except Exception as e:
         return f"Error creating event: {str(e)}"
+
+
+@mcp.tool()
+def calendar_update_event(
+    event_id: str,
+    title: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    description: Optional[str] = None
+) -> str:
+    """
+    Update an existing calendar event.
+
+    Args:
+        event_id: The Google Calendar event ID
+        title: New event title (optional)
+        start_time: New start time in ISO format (optional)
+        end_time: New end time in ISO format (optional)
+        description: New event description (optional)
+
+    Returns:
+        Confirmation message
+    """
+    try:
+        return google_utils.update_event(
+            event_id=event_id,
+            summary=title,
+            start_time=start_time,
+            end_time=end_time,
+            description=description
+        )
+    except Exception as e:
+        return f"Error updating event: {str(e)}"
+
+
+@mcp.tool()
+def calendar_delete_event(event_id: str) -> str:
+    """
+    Delete a calendar event.
+
+    Args:
+        event_id: The Google Calendar event ID
+
+    Returns:
+        Confirmation message
+    """
+    try:
+        return google_utils.delete_event(event_id)
+    except Exception as e:
+        return f"Error deleting event: {str(e)}"
 
 
 if __name__ == "__main__":

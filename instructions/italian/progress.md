@@ -1,12 +1,12 @@
 # Italian Learning Progress
 
 ## Student Level
-**Beginner** - Starting from scratch
+**Intermediate** - Has conversational foundation, refining grammar and expanding vocabulary
 
 ## Current Status
-- **Started**: Not yet
-- **Current Week**: 0
-- **Estimated Level**: A0
+- **Started**: 2026-02-04
+- **Current Week**: 1
+- **Estimated Level**: A2-B1
 
 ## Lessons Completed
 
